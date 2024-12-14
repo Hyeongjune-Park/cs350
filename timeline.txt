@@ -1,4 +1,8 @@
-0: 7: 23 people observed
-0: 12: 23 people observed
-0: 17: 26 people observed
-0: 21: 13 people observed
+00:04: 31 people observed
+00:06: 28 people observed
+00:09: 49 people observed
+00:12: 43 people observed
+00:15: 44 people observed
+00:18: 51 people observed
+00:21: 42 people observed
+00:24: 30 people observed

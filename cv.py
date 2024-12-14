@@ -26,7 +26,7 @@ def count_people(frame):
             confidence = scores[class_id]
 
             # 사람 클래스(0)만 감지
-            if confidence > 0.5 and class_id == 0:  # confidence threshold
+            if confidence > 0.1 and class_id == 0:  # confidence threshold
                 # 감지된 사람의 위치에 사각형을 그립니다.
                 center_x = int(detection[0] * frame.shape[1])
                 center_y = int(detection[1] * frame.shape[0])
@@ -39,7 +39,7 @@ def count_people(frame):
                 confidences.append(float(confidence))
 
     # Non-Maximum Suppression 적용
-    indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)  # confidence threshold, NMS threshold
+    indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.8)  # confidence threshold, NMS threshold
 
     # NMS 결과 처리
     if len(indices) > 0:
@@ -47,6 +47,7 @@ def count_people(frame):
             box = boxes[i]
             x, y, w, h = box
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)  # 사각형 색상: 파란색, 두께: 2
+            cv2.putText(frame, "Detected", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
     return len(indices) if len(indices) > 0 else 0  # NMS 후 남은 인덱스 수를 반환
 
@@ -67,6 +68,8 @@ def process_video(video_path, interval_seconds):
         cap = cv2.VideoCapture(video_path)
         last_time = time.time()  # 시작 시간
         people_count = 0  # people_count 변수를 초기화합니다.
+        send_message = ""  # "Send to server" 메시지를 위한 변수
+        send_time = 0  # 메시지를 표시한 시간을 저장할 변수
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -74,31 +77,52 @@ def process_video(video_path, interval_seconds):
                 break
 
             current_time = time.time()
+            # 현재 시간 계산
+            elapsed_time = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000  # 초 단위
+            minutes = int(elapsed_time // 60)
+            seconds = int(elapsed_time % 60)
+
+            # minutes와 seconds를 항상 2자리로 표현
+            minutes_str = str(minutes).zfill(2)
+            seconds_str = str(seconds).zfill(2)
+
             if current_time - last_time >= interval_seconds:  # 지정한 시간 간격 확인
-                people_count = count_people(frame)  # 사람 수를 세고 변수에 저장
+                new_people_count = count_people(frame)  # 사람 수를 세고 변수에 저장
+                if new_people_count != people_count:  # people_count가 변경된 경우
+                    send_message = "Send to server"  # 메시지 설정
+                    send_time = current_time  # 메시지를 표시한 시간 저장
+
+                people_count = new_people_count  # people_count 업데이트
                 send_to_server(people_count)
                 last_time = current_time  # 마지막 전송 시간을 업데이트
 
-                # 감지된 사람 수가 특정 값 이상일 때 프레임을 저장
-                if people_count > 0:  # 예: 0보다 많은 경우
-                    cv2.imwrite(f'capture/captured_frame_{int(current_time)}.png', frame)  # capture 폴더에 저장
+                # timeline.txt에 기록
+                timeline_file.write(f'{minutes_str}:{seconds_str}: {people_count} people observed\n')
 
-                    # 현재 시간 계산
-                    elapsed_time = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000  # 초 단위
-                    minutes = int(elapsed_time // 60)
-                    seconds = int(elapsed_time % 60)
-
-                    # timeline.txt에 기록
-                    timeline_file.write(f'{minutes}: {seconds}: {people_count} people observed\n')
+                # 터미널에 사람 수 출력
+                print(f'Time: {minutes_str}:{seconds_str}, People Count: {people_count}')
 
             # 감지된 사람 수를 화면에 표시
-            cv2.putText(frame, f'People Count: {people_count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            #cv2.putText(frame, f'People Count: {people_count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            # 현재 로그를 영상의 아랫쪽에 표시
+            log_text = f'DEC. 11th. 11:{minutes:02d}:{seconds:02d}, Current People: {people_count}'
+            cv2.putText(frame, log_text, (10, frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+            # "Send to server" 메시지를 표시할 시간 체크
+            if send_message and (current_time - send_time) < 1.8:
+                cv2.putText(frame, send_message, (700, frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+            # 영상 상단 중앙에 "Sample Video" 표시
+            text = "Sample Video"
+            text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+            text_x = (frame.shape[1] - text_size[0]) // 2
+            cv2.putText(frame, text, (text_x, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
             # 결과 프레임을 화면에 표시
             cv2.imshow('Video', frame)
 
-            # 프레임 간의 지연 시간을 설정 (예: 33ms는 약 30 FPS)
-            if cv2.waitKey(10) & 0xFF == ord('q'):  # 'q' 키를 누르면 종료
+            if cv2.waitKey(30) & 0xFF == ord('q'):
                 break
 
         cap.release()
@@ -106,5 +130,5 @@ def process_video(video_path, interval_seconds):
 
 if __name__ == "__main__":
     video_file = "datasets/crowded_1.mp4"
-    time_interval = 3  # 예: 5초마다 사람 수를 센다
+    time_interval = 4 
     process_video(video_file, time_interval)
